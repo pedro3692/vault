@@ -72,6 +72,10 @@ export default Component.extend(DEFAULTS, {
     }
   },
 
+  getWindow() {
+    return window;
+  },
+
   firstMethod() {
     let firstMethod = this.get('methodsToShow.firstObject');
     if (!firstMethod) return;
@@ -202,7 +206,7 @@ export default Component.extend(DEFAULTS, {
 
   prepareForOIDC: task(function*(oidcWindow) {
     this.waitForClose.perform(oidcWindow);
-    let storageEvent = yield waitForEvent(window, 'storage');
+    let storageEvent = yield waitForEvent(this.getWindow(), 'storage');
     this.exchangeOIDC.perform(storageEvent, oidcWindow);
   }),
 
@@ -225,7 +229,7 @@ export default Component.extend(DEFAULTS, {
       return;
     }
     let { namespace, path, state, code } = JSON.parse(event.newValue);
-    window.localStorage.removeItem('oidcState');
+    this.getWindow().localStorage.removeItem('oidcState');
     this.closeWindow(oidcWindow);
     if (!path || !state || !code) {
       return this.handleOIDCError('missingParams');
@@ -267,10 +271,11 @@ export default Component.extend(DEFAULTS, {
       if (!this.isOIDC) {
         return;
       }
+      let win = this.getWindow();
 
-      let left = window.screen.width / 2 - 250;
-      let top = window.screen.height / 2 - 300;
-      let oidcWindow = window.open(
+      let left = win.screen.width / 2 - 250;
+      let top = win.screen.height / 2 - 300;
+      let oidcWindow = win.open(
         this.role.authUrl,
         'vaultOIDCWindow',
         `width=500,height=600,resizable,scrollbars=yes,top=${top},left=${left}`
