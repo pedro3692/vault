@@ -1154,9 +1154,13 @@ func addExtKeyUsageOids(data *dataBundle, certTemplate *x509.Certificate) {
 	}
 }
 
+func createCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
+	return createCertificateFmt(data, false)
+}
+
 // Performs the heavy lifting of creating a certificate. Returns
 // a fully-filled-in ParsedCertBundle.
-func createCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
+func createCertificateFmt(data *dataBundle, utf8string bool) (*certutil.ParsedCertBundle, error) {
 	var err error
 	result := &certutil.ParsedCertBundle{}
 
@@ -1188,6 +1192,49 @@ func createCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
 		IPAddresses:    data.params.IPAddresses,
 		URIs:           data.params.URIs,
 	}
+	if utf8string {
+		//CN
+		var b cryptobyte.Builder
+		oidStr, err := stringToOid("2.5.4.3")
+		if err != nil {
+			return nil, err
+		}
+
+		val, _ := asn1.Marshal(certTemplate.Subject.CommonName)
+
+		b.AddASN1ObjectIdentifier(oidStr)
+		b.AddASN1(cbbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
+			b.AddASN1(cbbasn1.UTF8String, func(b *cryptobyte.Builder) {
+				b.AddBytes([]byte(val))
+			})
+		})
+
+		m, err := b.Bytes()
+
+		rv := asn1.RawValue{
+			Tag:        12,
+			Class:      4,
+			IsCompound: true,
+			Bytes:      m[9:], //ignore 9 bytes of "garbage"
+		}
+
+		atv := pkix.AttributeTypeAndValue{
+			Type:  oidStr,
+			Value: rv,
+		}
+
+		var atvs pkix.RelativeDistinguishedNameSET
+		atvs = append(atvs, atv)
+
+		dn := certTemplate.Subject.ToRDNSequence()
+
+		dn = append(dn, atvs)
+
+		rawSubject, _ := asn1.Marshal(dn)
+
+		certTemplate.RawSubject = rawSubject
+	}
+
 	if data.params.NotBeforeDuration > 0 {
 		certTemplate.NotBefore = time.Now().Add(-1 * data.params.NotBeforeDuration)
 	}
