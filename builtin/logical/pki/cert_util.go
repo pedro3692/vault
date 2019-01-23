@@ -1154,8 +1154,134 @@ func addExtKeyUsageOids(data *dataBundle, certTemplate *x509.Certificate) {
 	}
 }
 
+func createRelativeDistinguishedNameSET(name interface{}, oid string) (pkix.RelativeDistinguishedNameSET, error) {
+	oidStr, err := stringToOid(oid)
+	if err != nil {
+		return nil, err
+	}
+	val, _ := asn1.Marshal(name)
+
+	var rv asn1.RawValue
+
+	rv = asn1.RawValue{
+		Tag:        12,
+		Class:      4,
+		IsCompound: true,
+		Bytes:      val,
+	}
+
+	atv := pkix.AttributeTypeAndValue{
+		Type:  oidStr,
+		Value: rv,
+	}
+	var atvs pkix.RelativeDistinguishedNameSET
+	atvs = append(atvs, atv)
+	return atvs, nil
+}
+
+func createRawSubjectUTF8(certTemplate *x509.Certificate) ([]byte, error) {
+
+	dn := pkix.Name{}.ToRDNSequence()
+
+	// Organization name ####################################################
+	if len(certTemplate.Subject.Organization) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.Organization, "2.5.4.10")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Common Name ####################################################
+	if certTemplate.Subject.CommonName != "" {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.CommonName, "2.5.4.3")
+
+		if err != nil {
+			return nil, err
+		}
+		dn = append(dn, atvs)
+	}
+	// Serial Number ####################################################
+	if certTemplate.Subject.SerialNumber != "" {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.SerialNumber, "2.5.4.5")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Country name ####################################################
+	if len(certTemplate.Subject.Country) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.Country, "2.5.4.6")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Locality name ####################################################
+	if len(certTemplate.Subject.Locality) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.Locality, "2.5.4.7")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Province name ####################################################
+	if len(certTemplate.Subject.Province) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.Province, "2.5.4.8")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Street Address name ####################################################
+	if len(certTemplate.Subject.StreetAddress) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.StreetAddress, "2.5.4.9")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// OrganizationalUnit name ####################################################
+	if len(certTemplate.Subject.OrganizationalUnit) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.OrganizationalUnit, "2.5.4.11")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// Postal Code ####################################################
+	if len(certTemplate.Subject.PostalCode) > 0 {
+		atvs, err := createRelativeDistinguishedNameSET(certTemplate.Subject.PostalCode, "2.5.4.17")
+
+		if err != nil {
+			return nil, err
+		}
+
+		dn = append(dn, atvs)
+	}
+	// ####################################################
+
+	rawSubject, _ := asn1.Marshal(dn)
+
+	return rawSubject, nil
+}
+
 func createCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
-	return createCertificateFmt(data, false)
+	//TODO: change this to false
+	return createCertificateFmt(data, true)
 }
 
 // Performs the heavy lifting of creating a certificate. Returns
@@ -1193,46 +1319,7 @@ func createCertificateFmt(data *dataBundle, utf8string bool) (*certutil.ParsedCe
 		URIs:           data.params.URIs,
 	}
 	if utf8string {
-		//CN
-		var b cryptobyte.Builder
-		oidStr, err := stringToOid("2.5.4.3")
-		if err != nil {
-			return nil, err
-		}
-
-		val, _ := asn1.Marshal(certTemplate.Subject.CommonName)
-
-		b.AddASN1ObjectIdentifier(oidStr)
-		b.AddASN1(cbbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {
-			b.AddASN1(cbbasn1.UTF8String, func(b *cryptobyte.Builder) {
-				b.AddBytes([]byte(val))
-			})
-		})
-
-		m, err := b.Bytes()
-
-		rv := asn1.RawValue{
-			Tag:        12,
-			Class:      4,
-			IsCompound: true,
-			Bytes:      m[9:], //ignore 9 bytes of "garbage"
-		}
-
-		atv := pkix.AttributeTypeAndValue{
-			Type:  oidStr,
-			Value: rv,
-		}
-
-		var atvs pkix.RelativeDistinguishedNameSET
-		atvs = append(atvs, atv)
-
-		dn := certTemplate.Subject.ToRDNSequence()
-
-		dn = append(dn, atvs)
-
-		rawSubject, _ := asn1.Marshal(dn)
-
-		certTemplate.RawSubject = rawSubject
+		certTemplate.RawSubject, _ = createRawSubjectUTF8(certTemplate)
 	}
 
 	if data.params.NotBeforeDuration > 0 {
@@ -1391,9 +1478,14 @@ func createCSR(data *dataBundle) (*certutil.ParsedCSRBundle, error) {
 	return result, nil
 }
 
+func signCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
+	//TODO: change this to false
+	return signCertificateFmt(data, true)
+}
+
 // Performs the heavy lifting of generating a certificate from a CSR.
 // Returns a ParsedCertBundle sans private keys.
-func signCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
+func signCertificateFmt(data *dataBundle, utf8string bool) (*certutil.ParsedCertBundle, error) {
 	switch {
 	case data == nil:
 		return nil, errutil.UserError{Err: "nil data bundle given to signCertificate"}
@@ -1503,6 +1595,10 @@ func signCertificate(data *dataBundle) (*certutil.ParsedCertBundle, error) {
 	if len(data.params.PermittedDNSDomains) > 0 {
 		certTemplate.PermittedDNSDomains = data.params.PermittedDNSDomains
 		certTemplate.PermittedDNSDomainsCritical = true
+	}
+
+	if utf8string {
+		certTemplate.RawSubject, _ = createRawSubjectUTF8(certTemplate)
 	}
 
 	certBytes, err = x509.CreateCertificate(rand.Reader, certTemplate, caCert, data.csr.PublicKey, data.signingBundle.PrivateKey)
